@@ -1,0 +1,23 @@
+import serial
+from pygame import mixer
+
+ser = serial.Serial("COM7", 9600)
+audio = ["audioOne.mp3", 
+            "audioTwo.mp3",
+            "audioThree.mp3"]
+index = 0
+
+
+mixer.init()
+
+while True:
+    line = ser.readline().decode().strip()
+    if (line == "PLAY MUSIC"):
+        mixer.music.load(audio[index])
+        mixer.music.set_volume(0.7)
+        mixer.music.play()
+        while (mixer.music.get_busy()): 
+            continue
+        index = 0 if (index == 2) else index+1
+        ser.write("1\n".encode())   # send as line of text
+
