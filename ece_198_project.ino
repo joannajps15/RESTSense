@@ -13,7 +13,7 @@ int8_t SPO2Valid = 0, heartValid = 0;
 
 struct dataPulseOximeter {
   unsigned long timestamp;
-  int32_t SPO2;
+  // int32_t SPO2;
   int32_t heartRate;
 };
 int pulseIndex = 0;
@@ -23,7 +23,7 @@ dataPulseOximeter nightReadingsPulseOximeter[numSamples];
 const int xPin = A3;
 const int yPin = A2;
 const int zPin = A1;
-const int SAMPLES = 10;
+const int SAMPLES = 25;
 const float RestVoltage = 1.641;  // Voltage at 0 gravity (g) at 3.3V
 float xRest = 0;
 float yRest = 0;
@@ -39,7 +39,7 @@ float readAveragedVoltage(int pin, int samples) {
     delayMicroseconds(40);
   }
   //10-bit value converted to voltage between 0 and 5 volts
-  return ((sum / (float)samples) * (5.0 / 1023.0));
+  return ((sum / (float)samples) * (3.3 / 1023.0));
 }
 
 struct dataAccelerometer {
@@ -108,9 +108,14 @@ void setup() {
 
   
   // Accelerometer
-  xRest = readAveragedVoltage(xPin, 200);
-  yRest = readAveragedVoltage(yPin, 200);
-  zRest = readAveragedVoltage(zPin, 200);  // includes gravity
+  // xRest = readAveragedVoltage(xPin, 200);
+  // yRest = readAveragedVoltage(yPin, 200);
+  // zRest = readAveragedVoltage(zPin, 200); 
+
+  // Accelerometer
+  xRest = readAveragedVoltage(xPin, SAMPLES);
+  yRest = readAveragedVoltage(yPin, SAMPLES);
+  zRest = readAveragedVoltage(zPin, SAMPLES); 
 
   // LED Warm Light
   pinMode(ledPinRed, OUTPUT);
@@ -134,7 +139,7 @@ void loop() {
   pulseOximeter.heartrateAndOxygenSaturation(&SPO2, &SPO2Valid, &heartRate, &heartValid);
 
   if (SPO2Valid && (SPO2 != -999) && heartValid && (heartRate != -999)) {
-    nightReadingsPulseOximeter[pulseIndex] = { millis(), SPO2, heartRate };
+    nightReadingsPulseOximeter[pulseIndex] = { millis(), heartRate };
     pulseIndex = (pulseIndex == numSamples - 1) ? 0 : pulseIndex + 1;
     Serial.println("HEART RATE: ");
     Serial.println(heartRate);
@@ -156,28 +161,29 @@ void loop() {
   float g_y = (yVoltage - yRest) / sensitivity;
   float g_z = (zVoltage - zRest) / sensitivity;
 
-  float accelX = g_x * 9.81;
-  float accelY = g_y * 9.81;
-  float accelZ = g_z * 9.81;
+  float accelX = g_x;
+  float accelY = g_y;
+  float accelZ = g_z;
 
   float magnitude = sqrt((accelX * accelX) + (accelY * accelY) + (accelZ * accelZ));  //averaged acceleration
-  float movement = abs(magnitude - 9.81);
+  float movement = abs(magnitude);
 
-  if (movement < thresholdAccel) {  //disclude acceleration from gravity
+  if (movement > ssiAccel) {  //disclude acceleration from gravity, we record!
     nightReadingsAccelerometer[accelIndex] = { millis(), movement };
     accelIndex = (accelIndex == numSamples - 1) ? 0 : accelIndex + 1;
     // Serial.println("ACCEL: ");
     // Serial.println(movement);
   }
-
+  Serial.println("ACCEL: ");
+  Serial.println(movement);
 
   // 3) Sound Sensor | only read if sound is not playing!
   if (!soundOn) {
     int soundOut = readAveragedADC(A0, SAMPLES);
     nightReadingsSound[soundIndex] = { millis(), soundOut };
     soundIndex = (soundIndex == numSamples - 1) ? 0 : soundIndex + 1;
-    // Serial.println("SOUND: ");
-    // Serial.println(soundOut);
+    Serial.println("SOUND: ");
+    Serial.println(soundOut);
   }
 
 
@@ -187,17 +193,19 @@ void loop() {
   else if (nightReadingsPulseOximeter[pulseIndex - 1].heartRate < thresholdHeartRate[2]) {
     ssiPulse = (abs(nightReadingsPulseOximeter[pulseIndex - 1].heartRate - thresholdHeartRate[0]) / thresholdHeartRate[0]) * 100;
   } else ssiPulse = (abs(nightReadingsPulseOximeter[pulseIndex - 1].heartRate - thresholdHeartRate[1]) / thresholdHeartRate[1]) * 100;
-  ssiPulse = ((ssiPulse/100.0) * 35);
+  ssiPulse = 35 - int((ssiPulse/100.0) * 35);
+  
   if (accelIndex == 0 || nightReadingsAccelerometer[accelIndex - 1].magnitude == 0) ssiAccel = 0;
   else ssiAccel = (abs(nightReadingsAccelerometer[accelIndex - 1].magnitude - thresholdAccel) / thresholdAccel) * 100;
-  ssiAccel = ((ssiAccel/100.0)*30);
+  ssiAccel = 30 - int((ssiAccel/100.0)*30);
 
   if (soundIndex == 0 || soundOn == 1 || nightReadingsSound[soundIndex - 1].sound == 0) ssiSound = 0;
   else ssiSound = (abs(nightReadingsSound[soundIndex - 1].sound - thresholdSound) / thresholdSound) * 100;
-  ssiSound = ((ssiSound/100.0)*35);
+  ssiSound = 35 - int((ssiSound/100.0)*35);
 
   SSI = ssiPulse + ssiAccel + ssiSound;
-
+  Serial.println("SSI");
+  Serial.println(SSI);
 
   // Threshold Comparisons
   if ((pulseIndex == 0 || nightReadingsPulseOximeter[pulseIndex - 1].heartRate == 0) || 
@@ -208,7 +216,7 @@ void loop() {
     highInstability = 0;
     mildInstability = 0;
 
-    SSI = 0;
+    SSI = -1;
   }
 
   else if (nightReadingsPulseOximeter[pulseIndex - 1].heartRate < 0.2 * thresholdHeartRate[0] || 
@@ -217,7 +225,10 @@ void loop() {
   nightReadingsSound[soundIndex - 1].sound > 0.2 * thresholdSound) {
     // SEVERE INSTABILITY!
     errorInstability = 0;
-    severeInstability = 1;
+    severeInstability = 1;    
+    highInstability = 0;
+    mildInstability = 0;
+
   }
 
   else if (nightReadingsPulseOximeter[pulseIndex - 1].heartRate < 0.15 * thresholdHeartRate[0] || nightReadingsPulseOximeter[pulseIndex - 1].heartRate > 0.15 * thresholdHeartRate[1] || nightReadingsAccelerometer[accelIndex - 1].magnitude > 0.15 * thresholdAccel || nightReadingsSound[soundIndex - 1].sound > 0.15 * thresholdSound) {
@@ -225,6 +236,7 @@ void loop() {
     errorInstability = 0;
     highInstability = 1;
     severeInstability = 0;
+    mildInstability = 0;
   }
 
   else if (nightReadingsPulseOximeter[pulseIndex - 1].heartRate < 0.1 * thresholdHeartRate[0] || nightReadingsPulseOximeter[pulseIndex - 1].heartRate > 0.1 * thresholdHeartRate[1] || nightReadingsAccelerometer[accelIndex - 1].magnitude > 0.1 * thresholdAccel || nightReadingsSound[soundIndex - 1].sound > 0.1 * thresholdSound) {
