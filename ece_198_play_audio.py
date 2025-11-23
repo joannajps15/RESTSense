@@ -21,3 +21,10 @@ while True:
         index = 0 if (index == 2) else index+1
         ser.write("1\n".encode())   # send as line of text
 
+    if (line == "END"):
+        with open("RESTSense_data.txt", "w") as file:
+            while True: 
+                line = ser.readline().decode().strip()
+                if (line == "COMPLETE"):
+                    break
+                file.write(line + "\n")
