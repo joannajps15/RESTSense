@@ -11,8 +11,13 @@ index = 0
 mixer.init()
 
 while True:
-    line = ser.readline().decode().strip()
+    try:
+        line = ser.readline().decode().strip()
+    except UnicodeDecodeError: 
+        print("ok")
+    print(line)
     if (line == "PLAY MUSIC"):
+        print("playing music")
         mixer.music.load(audio[index])
         mixer.music.set_volume(0.7)
         mixer.music.play()
@@ -23,6 +28,7 @@ while True:
 
     if (line == "END"):
         with open("RESTSense_data.txt", "w") as file:
+            print("writing to file")
             while True: 
                 line = ser.readline().decode().strip()
                 if (line == "COMPLETE"):
